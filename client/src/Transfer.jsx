@@ -1,50 +1,83 @@
 import { useState } from "react";
 import server from "./server";
+import Keeper from "./Keeper";
 
-function Transfer({ address, setBalance }) {
-  const [sendAmount, setSendAmount] = useState("");
+function Transfer({ user, setBalance, sendAmount }) {
   const [recipient, setRecipient] = useState("");
+  const [recipientBalance, setRecipientBalance] = useState(0);
 
-  const setValue = (setter) => (evt) => setter(evt.target.value);
+  // Transfer function, that calls send on the server after signing from Keeper
+  async function transfer(e) {
+    e.preventDefault();
 
-  async function transfer(evt) {
-    evt.preventDefault();
+    const message = {
+      amount: parseInt(sendAmount),
+      recipient: Keeper.getAddress(recipient),
+    };
 
+    // Signature is composed of the user (private key?) and the message object
+    const signature = await Keeper.sign(user, message);
+
+    const transaction = {
+      message,
+      signature,
+    };
+    // Try calling send on the server with the transaction and updating sender balance afterwards
     try {
       const {
         data: { balance },
-      } = await server.post(`send`, {
-        sender: address,
-        amount: parseInt(sendAmount),
-        recipient,
-      });
+      } = await server.post(`send`, transaction);
       setBalance(balance);
     } catch (ex) {
-      alert(ex.response.data.message);
+      alert(ex);
+    }
+
+    // Update recipient address after successfully transfering
+    const address = Keeper.getAddress(recipient);
+    const {
+      data: { balance },
+    } = await server.get(`balance/${address}`);
+    setRecipientBalance(balance);
+  }
+
+  // Function for users selector
+  async function onSelectUser(e) {
+    const selectedUser = e.target.value;
+    setRecipient(selectedUser);
+
+    if (selectedUser) {
+      const address = Keeper.getAddress(selectedUser);
+      const {
+        data: { balance },
+      } = await server.get(`balance/${address}`);
+      setRecipientBalance(balance);
+    } else {
+      setRecipientBalance(0);
     }
   }
 
   return (
     <form className="container transfer" onSubmit={transfer}>
-      <h1>Send Transaction</h1>
+      <h1>Receivers Wallet</h1>
 
       <label>
-        Send Amount
-        <input
-          placeholder="1, 2, 3..."
-          value={sendAmount}
-          onChange={setValue(setSendAmount)}
-        ></input>
+        Recipient wallet:{" "}
+        {Keeper.getAddress(recipient)
+          ? `${Keeper.getAddress(recipient)}`
+          : null}
+        <select className="selector" onChange={onSelectUser} value={recipient}>
+          <option value="">- Select a wallet -</option>
+          {Keeper.Accounts.map((u, i) => (
+            <option key={i} value={u}>
+              {u}
+            </option>
+          ))}
+        </select>
       </label>
 
-      <label>
-        Recipient
-        <input
-          placeholder="Type an address, for example: 0x2"
-          value={recipient}
-          onChange={setValue(setRecipient)}
-        ></input>
-      </label>
+      <div className="balanceReceiver">
+        Recipient balance: {recipientBalance}
+      </div>
 
       <input type="submit" className="button" value="Transfer" />
     </form>
